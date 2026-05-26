@@ -1,4 +1,3 @@
-/// <reference types="node" />
 import { Command } from "commander";
 import { UserAgent } from "./useragents.js";
 

@@ -4,6 +4,7 @@
     "rootDir": "./src",
     "module": "node18",
     "moduleDetection": "force",
+    "types": ["node"],
     "target": "esnext",
     "lib": [
       "DOM",
