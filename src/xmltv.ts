@@ -52,6 +52,17 @@ function parseChannelNo(no: string | null | undefined): number[] {
   return s.split(/[^\d]+/).filter(Boolean).map((n) => parseInt(n, 10));
 }
 
+/**
+ * Convert a channel object to a channel id string compatible with Zap2It format: I{channelNo}.{channelId}.zap2it.com
+ * @param channel The channel object containing channelNo and channelId.
+ * @returns The formatted channel ID string.
+ */
+function channelToChannelId(channel: {channelNo: string | null; channelId: string}): string {
+  const channelNo = (channel.channelNo || "").trim();
+  const stationId = (channel.channelId || "").trim();
+  return `I${channelNo}.${stationId}.zap2it.com`;
+}
+
 // Shared comparator honoring --sortname, --stationid, else numeric channelNo
 function channelComparator(a: any, b: any): number {
   if (useSortName) {
@@ -113,7 +124,7 @@ export function buildChannelsXml(data: GridApiResponse): string {
   const sortedChannels = [...data.channels].sort(channelComparator);
 
   for (const channel of sortedChannels) {
-    xml += `  <channel id="${escapeXml(channel.channelId)}">\n`;
+    xml += `  <channel id="${escapeXml(channelToChannelId(channel))}">\n`;
     // Build display-name list with optional NextPVR ordering
     {
       const displayNames: string[] = [];
@@ -170,6 +181,7 @@ export function buildProgramsXml(data: GridApiResponse): string {
   const sortedChannels = [...data.channels].sort(channelComparator);
 
   for (const channel of sortedChannels) {
+    const channelId = channelToChannelId(channel);
     // Sort events by startTime within each channel
     const sortedEvents = [...channel.events].sort(
       (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
@@ -189,7 +201,7 @@ export function buildProgramsXml(data: GridApiResponse): string {
 
       xml += `  <programme start="${formatDate(
         event.startTime
-      )}" stop="${formatDate(event.endTime)}" channel="${escapeXml(channel.channelId)}">\n`;
+      )}" stop="${formatDate(event.endTime)}" channel="${escapeXml(channelId)}">\n`;
 
       const isNew = event.flag?.includes("New");
       const isLive = event.flag?.includes("Live");
