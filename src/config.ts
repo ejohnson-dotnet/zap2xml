@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { UserAgent } from "./useragents.js";
 
 // Inject CLI flags from environment variables

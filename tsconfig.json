@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "outDir": "${configDir}/dist",
+    "rootDir": "./src",
     "module": "node18",
     "moduleDetection": "force",
     "target": "esnext",
