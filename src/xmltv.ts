@@ -1,5 +1,5 @@
 import type { GridApiResponse } from "./tvlistings.js";
-import { Command } from "commander";
+import { getCliOptions } from "./config.js";
 
 // TF 10/2025 Add node.js module needed for helper function.
 import assert from "assert";
@@ -25,27 +25,6 @@ export function formatDate(dateStr: string): string {
   return `${YYYY}${MM}${DD}${hh}${mm}${ss} +0000`;
 }
 
-const cli = new Command();
-cli
-  .option("--appendAsterisk", "Append * to titles with <new /> or <live />")
-  .option("--mediaportal", "Prioritize xmltv_ns episode-num tags")
-  .option("--lineupId <lineupId>", "Lineup ID")
-  .option("--timespan <hours>", "Timespan in hours (up to 360)", "6")
-  .option("--pref <prefs>", "User Preferences, e.g. m,p,h")
-  .option("--country <code>", "Country code", "USA")
-  .option("--postalCode <zip>", "Postal code", "30309")
-  .option("--userAgent <agent>", "Custom user agent string")
-  .option("--timezone <zone>", "Timezone")
-  .option("--outputFile <filename>", "Output file name", "xmltv.xml")
-  .option("--nextpvr", "Move \"channelNo callsign\" display-name to first position")
-  .option("--stationid", "Sort channels by station ID (legacy behavior)")
-  .option("--sortname", "Sort channels alphabetically by call sign/name");
-cli.parse(process.argv);
-const options = cli.opts() as { [key: string]: any };
-const useNextPvr = Boolean(options["nextpvr"]) || ((process.env["NEXTPVR"] || "").toLowerCase() === "true");
-const useStationId = Boolean(options["stationid"]) || ((process.env["STATIONID"] || "").toLowerCase() === "true");
-const useSortName = Boolean(options["sortname"]) || ((process.env["SORTNAME"] || "").toLowerCase() === "true");
-
 // Helper: parse channel numbers like "2.1", "10-2", "702" into number segments
 function parseChannelNo(no: string | null | undefined): number[] {
   const s = (no || "").toString();
@@ -64,7 +43,7 @@ function channelToChannelId(channel: {channelNo: string | null; channelId: strin
 }
 
 // Shared comparator honoring --sortname, --stationid, else numeric channelNo
-function channelComparator(a: any, b: any): number {
+function channelComparator(a: any, b: any, useSortName: boolean, useStationId: boolean): number {
   if (useSortName) {
     const aName = (a.callSign || a.affiliateName || "").toString();
     const bName = (b.callSign || b.affiliateName || "").toString();
@@ -119,20 +98,23 @@ return true
 
 export function buildChannelsXml(data: GridApiResponse): string {
   let xml = "";
+  const options = getCliOptions();
 
   // Sort channels by channelId for deterministic <channel> order
-  const sortedChannels = [...data.channels].sort(channelComparator);
+  const sortedChannels = [...data.channels].sort((a, b) =>
+    channelComparator(a, b, options.sortname, options.stationid)
+  );
 
   for (const channel of sortedChannels) {
     xml += `  <channel id="${escapeXml(channelToChannelId(channel))}">\n`;
     // Build display-name list with optional NextPVR ordering
     {
       const displayNames: string[] = [];
-      if (useNextPvr && channel.channelNo) {
+      if (options.nextpvr && channel.channelNo) {
         displayNames.push(`${channel.channelNo} ${channel.callSign}`);
       }
       displayNames.push(channel.callSign);
-      if (!useNextPvr && channel.channelNo) {
+      if (!options.nextpvr && channel.channelNo) {
         displayNames.push(`${channel.channelNo} ${channel.callSign}`);
       }
       if (channel.affiliateName) {
@@ -169,6 +151,7 @@ export function buildChannelsXml(data: GridApiResponse): string {
 
 export function buildProgramsXml(data: GridApiResponse): string {
   let xml = "";
+  const options = getCliOptions();
   const matchesPreviouslyShownPattern = (programId: string): boolean => {
     return /^EP|^SH|^\d/.test(programId);
   };
@@ -178,7 +161,9 @@ export function buildProgramsXml(data: GridApiResponse): string {
   };
 
   // Sort channels by channelId so <programme> blocks group by channel
-  const sortedChannels = [...data.channels].sort(channelComparator);
+  const sortedChannels = [...data.channels].sort((a, b) =>
+    channelComparator(a, b, options.sortname, options.stationid)
+  );
 
   for (const channel of sortedChannels) {
     const channelId = channelToChannelId(channel);
@@ -206,7 +191,7 @@ export function buildProgramsXml(data: GridApiResponse): string {
       const isNew = event.flag?.includes("New");
       const isLive = event.flag?.includes("Live");
       let title = event.program.title;
-      if (options["appendAsterisk"] && (isNew || isLive)) {
+      if (options.appendAsterisk && (isNew || isLive)) {
         title += " *";
       }
       xml += `    <title>${escapeXml(title)}</title>\n`;
@@ -282,7 +267,7 @@ export function buildProgramsXml(data: GridApiResponse): string {
         const episodeNum = parseInt(event.program.episode, 10);
         if (!isNaN(seasonNum) && !isNaN(episodeNum) && seasonNum >= 1 && episodeNum >= 1) {
           const xmltvNsTag = `    <episode-num system="xmltv_ns">${seasonNum - 1}.${episodeNum - 1}.</episode-num>\n`;
-          if (options["mediaportal"]) {
+          if (options.mediaportal) {
             episodeNumTags.unshift(xmltvNsTag);
           } else {
             episodeNumTags.push(xmltvNsTag);
@@ -300,7 +285,7 @@ export function buildProgramsXml(data: GridApiResponse): string {
         const episodeIdx = parseInt(event.program.episode, 10);
         if (!isNaN(episodeIdx)) {
           const xmltvNsTag = `    <episode-num system="xmltv_ns">${year - 1}.${episodeIdx - 1}.0/1</episode-num>\n`;
-          if (options["mediaportal"]) {
+          if (options.mediaportal) {
             episodeNumTags.unshift(xmltvNsTag);
           } else {
             episodeNumTags.push(xmltvNsTag);
@@ -323,7 +308,7 @@ export function buildProgramsXml(data: GridApiResponse): string {
           const mmddNum = parseInt(`${mm}${dd}`, 10);
           const mmddMinusOne = (mmddNum - 1).toString().padStart(4, "0");
           const xmltvNsTag = `    <episode-num system="xmltv_ns">${year - 1}.${mmddMinusOne}.</episode-num>\n`;
-          if (options["mediaportal"]) {
+          if (options.mediaportal) {
             episodeNumTags.unshift(xmltvNsTag);
           } else {
             episodeNumTags.push(xmltvNsTag);

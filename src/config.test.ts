@@ -1,5 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { processLineupId, getHeadendId } from "./config.js";
+import { processLineupId, getHeadendId, getCliOptions } from "./config.js";
+
+function withArgvAndEnv(args: string[], env: Record<string, string>, run: () => void) {
+  const originalArgv = [...process.argv];
+  const originalEnv = { ...process.env };
+  try {
+    process.argv = [...originalArgv.filter((arg) => !arg.startsWith("--")), ...args];
+    for (const [key, value] of Object.entries(env)) {
+      process.env[key] = value;
+    }
+    run();
+  } finally {
+    process.argv = originalArgv;
+    process.env = originalEnv;
+  }
+}
 
 describe("processLineupId", () => {
   it("returns env LINEUP_ID if set", () => {
@@ -36,5 +51,56 @@ describe("getHeadendId", () => {
   it("returns 'lineup' if no match", () => {
     expect(getHeadendId("INVALID")).toBe("lineup");
     expect(getHeadendId("")).toBe("lineup");
+  });
+});
+
+describe("getCliOptions precedence", () => {
+  it("prefers CLI over env for string options", () => {
+    withArgvAndEnv(
+      ["--lineupId=USA-CLI123", "--timespan=12", "--postalCode=55417"],
+      {
+        LINEUP_ID: "USA-ENV999",
+        TIMESPAN: "360",
+        POSTAL_CODE: "99999",
+      },
+      () => {
+        const options = getCliOptions();
+        expect(options.lineupId).toBe("USA-CLI123");
+        expect(options.timespan).toBe("12");
+        expect(options.postalCode).toBe("55417");
+      },
+    );
+  });
+
+  it("uses env when CLI string options are not provided", () => {
+    withArgvAndEnv(
+      [],
+      {
+        LINEUP_ID: "USA-ENV111",
+        TIMESPAN: "240",
+        POSTAL_CODE: "12345",
+      },
+      () => {
+        const options = getCliOptions();
+        expect(options.lineupId).toBe("USA-ENV111");
+        expect(options.timespan).toBe("240");
+        expect(options.postalCode).toBe("12345");
+      },
+    );
+  });
+
+  it("prefers CLI true flag over env false for boolean options", () => {
+    withArgvAndEnv(
+      ["--appendAsterisk", "--mediaportal"],
+      {
+        APPEND_ASTERISK: "false",
+        MEDIA_PORTAL: "false",
+      },
+      () => {
+        const options = getCliOptions();
+        expect(options.appendAsterisk).toBe(true);
+        expect(options.mediaportal).toBe(true);
+      },
+    );
   });
 });
